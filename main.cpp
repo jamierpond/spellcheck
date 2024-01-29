@@ -1,6 +1,8 @@
 #include "words.hpp"
 #include <iostream>
 #include <vector>
+#include <algorithm>
+#include <future>
 
 constexpr auto wagnerFischer = [](auto const &a, auto const &b) {
   auto const width = a.size();
@@ -32,14 +34,22 @@ static_assert(wagnerFischer(std::string_view{"jamie"},
                             std::string_view{"jmie"}) == 1);
 
 constexpr auto getCloseWords(const auto &word, const auto &dictionary) {
-  auto closeWords = std::vector<std::string_view>{};
-  closeWords.reserve(50);
+  auto filteredDict = std::vector<std::string_view>{};
+  filteredDict.reserve(dictionary.size() / 100);
+  const auto wordLength = word.size();
+  const auto oneLess = std::max(wordLength - 1, size_t{0});
+  const auto oneMore = wordLength + 1;
   for (auto const &dictWord : dictionary) {
-    const auto lengthDiff = std::abs(static_cast<int>(word.size()) -
-                                     static_cast<int>(dictWord.size()));
-    if (lengthDiff > 1) {
+    const auto dictWordLength = dictWord.size();
+    if (dictWordLength < oneLess || dictWordLength > oneMore) {
       continue;
     }
+    filteredDict.push_back(dictWord);
+  }
+
+  auto closeWords = std::vector<std::string_view>{};
+  closeWords.reserve(20);
+  for (auto const &dictWord : filteredDict) {
     if (wagnerFischer(word, dictWord) <= 1) {
       closeWords.push_back(dictWord);
     }
@@ -51,9 +61,36 @@ constexpr auto getCloseWords(const auto &word, const auto &dictionary) {
 // 0);
 
 int main() {
-  for (auto& word : DICTIONARY) {
-    const auto closeWords = getCloseWords(word, DICTIONARY);
-    std::cout << "Num close words for " << word << ": " << closeWords.size()
-              << '\n';
-  }
+  const auto firstHalfOfDictionary = DICTIONARY.size() / 2;
+  const auto secondHalfOfDictionary = DICTIONARY.size() - firstHalfOfDictionary;
+
+  std::array<std::string_view, firstHalfOfDictionary> firstHalf;
+  std::array<std::string_view, secondHalfOfDictionary> secondHalf;
+
+  std::copy(DICTIONARY.begin(), DICTIONARY.begin() + firstHalfOfDictionary,
+            firstHalf.begin());
+
+  std::copy(DICTIONARY.begin() + firstHalfOfDictionary, DICTIONARY.end(),
+            secondHalf.begin());
+
+  // launch first thread
+  auto first = std::async(std::launch::async, [&firstHalf]() {
+    for (auto& word : firstHalf) {
+      const auto closeWords = getCloseWords(word, DICTIONARY);
+      std::cout << "Num close words for " << word << ": " << closeWords.size()
+                << '\n';
+    }
+  });
+
+  auto second = std::async(std::launch::async, [&secondHalf]() {
+    for (auto& word : secondHalf) {
+      const auto closeWords = getCloseWords(word, DICTIONARY);
+      std::cout << "Num close words for " << word << ": " << closeWords.size()
+                << '\n';
+    }
+  });
+
+
+  first.wait();
+  second.wait();
 }
